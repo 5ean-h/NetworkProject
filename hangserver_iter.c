@@ -1,13 +1,16 @@
  /* Network server for hangman game */
  /* File: hangserver.c */
 
- #include <sys/types.h>
- #include <sys/socket.h>
- #include <netinet/in.h>
  #include <stdio.h>
- #include <syslog.h>
- #include <signal.h>
- #include <errno.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <syslog.h>
+#include <signal.h>
+#include <errno.h>
+#include <netdb.h>
+#include <unistd.h>
 
  extern time_t time ();
 
@@ -17,41 +20,85 @@
  };
  # define NUM_OF_WORDS (sizeof (word) / sizeof (word [0]))
  # define MAXLEN 80 /* Maximum size in the world of Any string */
- # define HANGMAN_TCP_PORT 1066
+# define HANGMAN_TCP_PORT "8080" /*Updated port number for getaddrinfo*/
+
 
  main ()
  {
+    struct addrinfo hints, * resource; /*Added for getaddrinfo*/
  	int sock, fd, client_len;
- 	struct sockaddr_in server, client;
+ 	struct sockaddr_in client;
 
  	srand ((int) time ((long *) 0)); /* randomize the seed */
 
- 	sock = socket (AF_INET, SOCK_STREAM, 0);//0 or IPPROTO_TCP
+    /* Configure server information with getaddrinfo */
+    printf("Configuring server...");
+    memset(&hints, 0, sizeof(struct addrinfo)); /* Prepare hints */
+    hints.ai_family = AF_INET;                  /* IPv4 */
+    hints.ai_socktype = SOCK_STREAM;            /* TCP */
+    hints.ai_flags = AI_PASSIVE;                /* Use server’s IP address (INADDR_ANY) */
+
+    /* Fill the resource structure */
+    int r = getaddrinfo(NULL, HANGMAN_TCP_PORT, &hints, &resource);
+    if (r != 0) {
+        perror("Failed");
+        exit(1);
+    }
+    puts("done");
+
+    sock = socket(resource->ai_family, resource->ai_socktype, resource->ai_protocol);
  	if (sock <0) { //This error checking is the code Stevens wraps in his Socket Function etc
  		perror ("creating stream socket");
+        freeaddrinfo(resource);  // Free memory if socket creation fails
  		exit (1);
  	}
 
- 	server.sin_family = AF_INET;
- 	server.sin_addr.s_addr = htonl(INADDR_ANY);
- 	server.sin_port = htons(HANGMAN_TCP_PORT);
-
- 	if (bind(sock, (struct sockaddr *) & server, sizeof(server)) <0) {
+ 	if (bind(sock, resource->ai_addr, resource->ai_addrlen) < 0) {
  		perror ("binding socket");
+        close(sock);
+        freeaddrinfo(resource);  // Free memory if bind fails
 	 	exit (2);
  	}
 
+    /* Free the resource allocated by getaddrinfo */
+    freeaddrinfo(resource);
+
  	listen (sock, 5);
+
+    /* Set up a signal handler to reap zombie child processes */
+    signal(SIGCHLD, reap_dead_processes);
 
  	while (1) {
  		client_len = sizeof (client);
  		if ((fd = accept (sock, (struct sockaddr *) &client, &client_len)) <0) {
  			perror ("accepting connection");
- 			exit (3);
+ 			continue;
  		}
- 		play_hangman (fd, fd);
- 		close (fd);
+ 		
+        /* Fork a new process to handle the client */
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork failed");
+            close(fd);
+            continue;
+        }
+
+        if (pid == 0) { /* Child process */
+            close(sock);  
+            play_hangman(fd, fd);  
+            close(fd);  
+            exit(0);  // Exit child process after handling client
+        }
+        else { /* Parent process */
+            close(fd);  // Close client socket in parent process
+        }
  	}
+ }
+
+ /* Signal handler to reap zombie processes */
+ void reap_dead_processes(int signum) {
+     (void)signum;  // Suppress unused parameter warning
+     while (waitpid(-1, NULL, WNOHANG) > 0);  // Reap all dead child processes
  }
 
  /* ---------------- Play_hangman () ---------------------*/
