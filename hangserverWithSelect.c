@@ -37,7 +37,7 @@
 
  fd_set allset;
 
- void init_client (client_t *client, int fd);
+ void client (client_t *client, int fd);
  void remove_client (client_t *clients, int i, int *maxfd);
  void play_hangman (client_t *client);
 
@@ -75,7 +75,7 @@
          exit (3);
      }
 
-     /* Initialize the client array */
+     /* client array */
      for (i = 0; i < MAX_CLIENTS; i++)
          clients [i].fd = -1;
 
@@ -101,7 +101,7 @@
 
              for (i = 0; i < MAX_CLIENTS; i++) {
                  if (clients [i].fd <0) {
-                     init_client (&clients [i], conn_fd);
+                     client (&clients [i], conn_fd);
                      break;
                  }
              }
@@ -128,7 +128,7 @@
              if ((sockfd = clients [i].fd) <0)
                  continue;
              if (FD_ISSET (sockfd, &rset)) {
-                 handle_client (&clients [i]);
+                 play_hangman (&clients [i]);
 
                  if (clients [i].game_state != 'I') {
                      /*Game over*/
@@ -146,8 +146,8 @@
      }
  }
 
- /* Initialize a new client just before playing the game */
- void init_client (client_t *client, int fd)
+ /* make a new client just before playing the game */
+ void client (client_t *client, int fd)
  {
      char buffer [BUFFER];
      char hostname [HOST_NAME_MAX + 1];
