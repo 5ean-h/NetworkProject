@@ -24,7 +24,7 @@
  #define HANGMAN_TCP_PORT 5066
  #define MAX_CLIENTS FD_SETSIZE  
 
- #define Buffer 256
+ #define BUFFER 256
 
  typedef struct {
      int fd;
@@ -149,7 +149,7 @@
  /* make a new client just before playing the game */
  void client (client_t *client, int fd)
  {
-     char buffer [BUFFER];
+     char outbuf [BUFFER];
      char hostname [HOST_NAME_MAX + 1];
 
      client->fd = fd;
@@ -192,7 +192,7 @@
  /* ---------------- Play_hangman () ---------------------*/
  void play_hangman (client_t *client)
  {
-     char guess [MAXLEN], outbuf [Buffer];
+     char guess [MAXLEN], outbuf [BUFFER];
      int n, i, good_guess;
 
      n = read (client->fd, guess, MAXLEN);
