@@ -105,7 +105,7 @@ void client(client_t *client, int fd) {
 
     client->fd = fd;
     client->lives = maxlives;
-    client->game_state = 'I';
+    client->game_state = 'I'; //I = Incomplete
 
     /* Pick a word at random from the list */
     client->whole_word = word[rand() % NUM_OF_WORDS];
@@ -129,14 +129,14 @@ void remove_client(client_t *clients, int i) {
     clients[i].fd = -1;
 }
 
-/* Play hangman with the client */
+ /* ---------------- Play_hangman () ---------------------*/
 void play_hangman(client_t *client) {
     char guess[MAXLEN], outbuf[BUFFER];
     int word, i, good_guess;
 
     word = read(client->fd, guess, MAXLEN);
     if (word <= 0) {
-        client->game_state = 'Q'; /* Client quit */
+        client->game_state = 'Q'; /* User quit */
         return;
     }
 
@@ -154,9 +154,9 @@ void play_hangman(client_t *client) {
     if (!good_guess)
         client->lives--;
     if (strcmp(client->whole_word, client->part_word) == 0)
-        client->game_state = 'W'; /* Client won */
+        client->game_state = 'W'; /* User won */
     else if (client->lives == 0) {
-        client->game_state = 'L'; /* Client lost */
+        client->game_state = 'L'; /* User lost */
         strcpy(client->part_word, client->whole_word); /* Show the word */
     }
 
