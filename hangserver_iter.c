@@ -2,6 +2,7 @@
  /* File: hangserver.c */
 
  #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -11,6 +12,10 @@
 #include <errno.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <arpa/inet.h>
+#include "DieWithMessage.h"
+#include "TCPServerUtility.h"
 
  extern time_t time ();
 
@@ -20,90 +25,39 @@
  };
  # define NUM_OF_WORDS (sizeof (word) / sizeof (word [0]))
  # define MAXLEN 80 /* Maximum size in the world of Any string */
-# define HANGMAN_TCP_PORT "8080" /*Updated port number for getaddrinfo*/
-
-
- main ()
- {
-    struct addrinfo hints, * resource; /*Added for getaddrinfo*/
- 	int sock, fd, client_len;
- 	struct sockaddr_in client;
-
- 	srand ((int) time ((long *) 0)); /* randomize the seed */
-
-    /* Configure server information with getaddrinfo */
-    printf("Configuring server...");
-    memset(&hints, 0, sizeof(struct addrinfo)); /* Prepare hints */
-    hints.ai_family = AF_INET;                  /* IPv4 */
-    hints.ai_socktype = SOCK_STREAM;            /* TCP */
-    hints.ai_flags = AI_PASSIVE;                /* Use server’s IP address (INADDR_ANY) */
-
-    /* Fill the resource structure */
-    int r = getaddrinfo(NULL, HANGMAN_TCP_PORT, &hints, &resource);
-    if (r != 0) {
-        perror("Failed");
-        exit(1);
-    }
-    puts("done");
-
-    sock = socket(resource->ai_family, resource->ai_socktype, resource->ai_protocol);
- 	if (sock <0) { //This error checking is the code Stevens wraps in his Socket Function etc
- 		perror ("creating stream socket");
-        freeaddrinfo(resource);  // Free memory if socket creation fails
- 		exit (1);
- 	}
-
- 	if (bind(sock, resource->ai_addr, resource->ai_addrlen) < 0) {
- 		perror ("binding socket");
-        close(sock);
-        freeaddrinfo(resource);  // Free memory if bind fails
-	 	exit (2);
- 	}
-
-    /* Free the resource allocated by getaddrinfo */
-    freeaddrinfo(resource);
-
- 	listen (sock, 5);
-
-    /* Set up a signal handler to reap zombie child processes */
-    signal(SIGCHLD, reap_dead_processes);
-
- 	while (1) {
- 		client_len = sizeof (client);
- 		if ((fd = accept (sock, (struct sockaddr *) &client, &client_len)) <0) {
- 			perror ("accepting connection");
- 			continue;
- 		}
- 		
-        /* Fork a new process to handle the client */
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("fork failed");
-            close(fd);
-            continue;
-        }
-
-        if (pid == 0) { /* Child process */
-            close(sock);  
-            play_hangman(fd, fd);  
-            close(fd);  
-            exit(0);  // Exit child process after handling client
-        }
-        else { /* Parent process */
-            close(fd);  // Close client socket in parent process
-        }
- 	}
+# define HANGMAN_TCP_PORT "5066" /*Updated port number for getaddrinfo*/
+ 
+ void HandleClient(int client_sock) {
+     play_hangman(client_sock);
  }
 
- /* Signal handler to reap zombie processes */
- void reap_dead_processes(int signum) {
-     (void)signum;  // Suppress unused parameter warning
-     while (waitpid(-1, NULL, WNOHANG) > 0);  // Reap all dead child processes
+ int main() {
+     int server_sock, client_sock;
+     struct sockaddr_in server_addr, client_addr;
+     socklen_t addr_len;
+
+     server_sock = SetupTCPServerSocket("1066");
+     printf("Server is listening on port %d\n", HANGMAN_TCP_PORT);
+
+     while (1) {
+         addr_len = sizeof(client_addr);
+         client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
+         if (client_sock == -1) {
+             perror("accept");
+             continue;
+         }
+
+         printf("Connection from %s\n", inet_ntoa(client_addr.sin_addr));
+         HandleClient(client_sock);
+     }
+
+     close(server_sock);
+     return 0;
  }
 
  /* ---------------- Play_hangman () ---------------------*/
 
- play_hangman (int in, int out)
+ void play_hangman (int in, int out)
  {
  	char * whole_word, part_word [MAXLEN],
  	guess[MAXLEN], outbuf [MAXLEN];
