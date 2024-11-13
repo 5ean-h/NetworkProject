@@ -2,9 +2,10 @@
  /* File: hangserver.c */
 
  #include <stdio.h>
-#include <stdlib.h>
+ #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <syslog.h>
@@ -12,52 +13,66 @@
 #include <errno.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <sys/wait.h>
-#include <arpa/inet.h>
-#include "DieWithMessage.h"
 #include "TCPServerUtility.h"
+#include "DieWithMessage.h"
 
  extern time_t time ();
 
  int maxlives = 12;
- char *word [] = {
- # include "words"
- };
+ extern char *word[];
  # define NUM_OF_WORDS (sizeof (word) / sizeof (word [0]))
  # define MAXLEN 80 /* Maximum size in the world of Any string */
-# define HANGMAN_TCP_PORT "5066" /*Updated port number for getaddrinfo*/
- 
- void HandleClient(int client_sock) {
-     play_hangman(client_sock);
- }
+# define HANGMAN_TCP_PORT "5060" 
 
- int main() {
-     int server_sock, client_sock;
-     struct sockaddr_in server_addr, client_addr;
-     socklen_t addr_len;
+void reap_dead_processes(int signum);
+void play_hangman(int in, int out);
 
-     server_sock = SetupTCPServerSocket("1066");
-     printf("Server is listening on port %d\n", HANGMAN_TCP_PORT);
+int main() 
+{
+	
+    int serverSock = SetupTCPServerSocket("5066");
+    signal(SIGCHLD, reap_dead_processes);
 
-     while (1) {
-         addr_len = sizeof(client_addr);
-         client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
-         if (client_sock == -1) {
-             perror("accept");
-             continue;
-         }
+    while (1) 
+	{
+        struct sockaddr_storage clientAddr;
+        socklen_t addrLen = sizeof(clientAddr);
+        int clientSock = accept(serverSock, (struct sockaddr *)&clientAddr, &addrLen);
+        if (clientSock < 0) 
+		{
+            perror("accept() failed");
+            continue;
+        }
 
-         printf("Connection from %s\n", inet_ntoa(client_addr.sin_addr));
-         HandleClient(client_sock);
-     }
 
-     close(server_sock);
-     return 0;
- }
+		// Select a random word for the client
+        char *selected_word = word[rand() % NUM_OF_WORDS];
+        write(clientSock, selected_word, strlen(selected_word));
+        write(clientSock, "\n", 1);
+
+        pid_t pid = fork();
+        if (pid == 0) //Child process
+		{ 
+            close(serverSock);
+            play_hangman(clientSock, clientSock);
+            close(clientSock);
+            exit(0);
+        } else //Parent process
+		{ 
+            close(clientSock);
+        }
+    }
+    return 0;
+}
+
+void reap_dead_processes(int signum) {
+    (void)signum;
+    while (waitpid(-1, NULL, WNOHANG) > 0);
+}
 
  /* ---------------- Play_hangman () ---------------------*/
 
- void play_hangman (int in, int out)
+ play_hangman (int in, int out)
  {
  	char * whole_word, part_word [MAXLEN],
  	guess[MAXLEN], outbuf [MAXLEN];
