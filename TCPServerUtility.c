@@ -1,36 +1,34 @@
-/* TCPServerUtility.c */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include "TCPServerUtility.h"
 #include "DieWithMessage.h"
 
 int SetupTCPServerSocket(const char *port) {
-    struct addrinfo hints, *res, *p;
-    int server_sock;
-
+    struct addrinfo hints, *serverInfo;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+    hints.ai_family = AF_INET;       // IPv4
+    hints.ai_socktype = SOCK_STREAM; // TCP
+    hints.ai_flags = AI_PASSIVE;     // Any local IP
 
-    if (getaddrinfo(NULL, port, &hints, &res) != 0) DieWithMessage("getaddrinfo failed", NULL);
+    if (getaddrinfo(NULL, port, &hints, &serverInfo) != 0)
+        DieWithMessage("getaddrinfo() failed");
 
-    for (p = res; p != NULL; p = p->ai_next) {
-        server_sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (server_sock == -1) continue;
-        if (bind(server_sock, p->ai_addr, p->ai_addrlen) == 0) break;
-        close(server_sock);
-    }
+    int serverSock = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol);
+    if (serverSock < 0)
+        DieWithMessage("socket() failed");
 
-    if (p == NULL) DieWithMessage("bind failed", NULL);
-    freeaddrinfo(res);
+    if (bind(serverSock, serverInfo->ai_addr, serverInfo->ai_addrlen) < 0)
+        DieWithMessage("bind() failed");
 
-    if (listen(server_sock, 10) == -1) DieWithMessage("listen failed", NULL);
+    if (listen(serverSock, SOMAXCONN) < 0)
+        DieWithMessage("listen() failed");
 
-    return server_sock;
+    freeaddrinfo(serverInfo);
+    return serverSock;
 }
