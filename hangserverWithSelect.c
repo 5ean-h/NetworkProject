@@ -7,8 +7,8 @@
 #include <time.h>
 #include <string.h>
 #include <limits.h>
-#include "DieWithMessage.h"  
-#include "TCPServerUtility.h
+#include "TCPServerUtility.h"
+#include "DieWithMessage.h"
 
 int maxlives = 12;
 char *word[] = {
@@ -37,51 +37,75 @@ void remove_client(client_t *clients, int i);
 void play_hangman(client_t *client);
 
 int main() {
-    int listen_fd, connection_fd;
-    socklen_t client_len;
-    struct sockaddr_in server, client_addr;
+	int serverSock = SetupTCPServerSocket("5066");
+    //int listen_fd, connection_fd;
+    //socklen_t client_len;
+    //struct sockaddr_in server, client_addr;
     fd_set rset;
     client_t clients[MAX_CLIENTS];
     int i;
 
-    srand((int)time((long *)0)); /* Randomize the seed */
+    //srand((int)time((long *)0)); /* Randomize the seed */
 
-    listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    //listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_port = htons(HANGMAN_TCP_PORT);
+    //server.sin_family = AF_INET;
+    //server.sin_addr.s_addr = htonl(INADDR_ANY);
+    //server.sin_port = htons(HANGMAN_TCP_PORT);
 
-    bind(listen_fd, (struct sockaddr *)&server, sizeof(server));
-    listen(listen_fd, 5);
+    //bind(listen_fd, (struct sockaddr *)&server, sizeof(server));
+    //listen(listen_fd, 5);
 
     for (i = 0; i < MAX_CLIENTS; i++)
         clients[i].fd = -1;
 
     FD_ZERO(&allset);
-    FD_SET(listen_fd, &allset);
+    FD_SET(serverSock, &allset);
 
     while (1) {
         rset = allset;
         select(FD_SETSIZE, &rset, NULL, NULL, NULL);
 
-        if (FD_ISSET(listen_fd, &rset)) {
-            client_len = sizeof(client_addr);
-            connection_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
-
+        if (FD_ISSET(serverSock, &rset)) {
+            //client_len = sizeof(client_addr);
+            //connection_fd = accept(serverSock, (struct sockaddr *)&client_addr, &client_len);
+			
+			struct sockaddr_storage clientAddr;
+			socklen_t addrLen = sizeof(clientAddr);
+			int clientSock = accept(serverSock, (struct sockaddr *)&clientAddr, &addrLen);
+			if (clientSock < 0) {
+                perror("accept() failed");
+                continue;
+            }
+			
             for (i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].fd < 0) {
-                    client(&clients[i], connection_fd);
+                    // Select a random word for the client
+                    clients[i].fd = clientSock;
+                    clients[i].whole_word = word[rand() % NUM_OF_WORDS];
+                    clients[i].word_length = strlen(clients[i].whole_word);
+                    clients[i].lives = maxlives;
+                    clients[i].game_state = 'I'; // Incomplete game
+
+                    // Send the selected word to the client
+                    char outbuf[MAXLEN];
+                    snprintf(outbuf, sizeof(outbuf), "%s\n", clients[i].whole_word);
+                    write(clientSock, outbuf, strlen(outbuf));
+
+                    // Initialize part_word with dashes
+                    memset(clients[i].part_word, '-', clients[i].word_length);
+                    clients[i].part_word[clients[i].word_length] = '\0';
+					
                     break;
                 }
             }
 
             if (i == MAX_CLIENTS) {
-                close(connection_fd);
+                close(clientSock);
                 continue;
             }
 
-            FD_SET(connection_fd, &allset);
+            FD_SET(clientSock, &allset);
         }
 
         /* Check clients */
@@ -99,36 +123,27 @@ int main() {
             }
         }
     }
+	return 0;
 }
 
-void client(client_t *client, int fd) {
-    char outbuf[BUFFER];
-    char hostname[HOST_NAME_MAX + 1];
+void initialize_client(client_t *client, int fd) {
+    char outbuf[MAXLEN];
 
     client->fd = fd;
     client->lives = maxlives;
-    client->game_state = 'I'; //I = Incomplete
+    client->game_state = 'I'; // Incomplete
 
-    /* Pick a word at random from the list */
+    // Select a random word for the client
     client->whole_word = word[rand() % NUM_OF_WORDS];
-    client->word_length = strlen(client->whole_word);
+    int word_length = strlen(client->whole_word);
 
-    /* No letters are guessed initially */
-    memset(client->part_word, '-', client->word_length);
-    client->part_word[client->word_length] = '\0';
-
-    gethostname(hostname, sizeof(hostname));
-    snprintf(outbuf, sizeof(outbuf), "Playing hangman on host %s:\n\n", hostname);
+    // Send the selected word to the client
+    snprintf(outbuf, sizeof(outbuf), "%s\n", client->whole_word);
     write(fd, outbuf, strlen(outbuf));
 
-    snprintf(outbuf, sizeof(outbuf), "%s %d\n", client->part_word, client->lives);
-    write(fd, outbuf, strlen(outbuf));
-}
-
-void remove_client(client_t *clients, int i) {
-    close(clients[i].fd);
-    FD_CLR(clients[i].fd, &allset);
-    clients[i].fd = -1;
+    // Initialize part_word with dashes
+    memset(client->part_word, '-', word_length);
+    client->part_word[word_length] = '\0';
 }
 
  /* ---------------- Play_hangman () ---------------------*/
