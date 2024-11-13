@@ -1,32 +1,30 @@
-/* TCPClientUtility.c */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
+#include "TCPClientUtility.h"
 #include "DieWithMessage.h"
 
 int SetupTCPClientSocket(const char *host, const char *port) {
-    struct addrinfo hints, *res, *p;
-    int client_sock;
-
+    struct addrinfo hints, *serverInfo;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_INET;       // IPv4
+    hints.ai_socktype = SOCK_STREAM; // TCP
 
-    if (getaddrinfo(host, port, &hints, &res) != 0) DieWithMessage("getaddrinfo failed", NULL);
+    if (getaddrinfo(host, port, &hints, &serverInfo) != 0)
+        DieWithMessage("getaddrinfo() failed");
 
-    for (p = res; p != NULL; p = p->ai_next) {
-        client_sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (client_sock == -1) continue;
-        if (connect(client_sock, p->ai_addr, p->ai_addrlen) == 0) break;
-        close(client_sock);
-    }
+    int clientSock = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol);
+    if (clientSock < 0)
+        DieWithMessage("socket() failed");
 
-    if (p == NULL) DieWithMessage("connect failed", NULL);
-    freeaddrinfo(res);
+    if (connect(clientSock, serverInfo->ai_addr, serverInfo->ai_addrlen) < 0)
+        DieWithMessage("connect() failed");
 
-    return client_sock;
+    freeaddrinfo(serverInfo);
+    return clientSock;
 }
