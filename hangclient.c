@@ -8,98 +8,43 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <errno.h>
-#include "DieWithMessage.h"
 #include "TCPClientUtility.h"
+#include "DieWithMessage.h"
 
 #define LINESIZE 80
-#define HANGMAN_TCP_PORT "5066"
+#define HANGMAN_TCP_PORT 5066
 
-void DieWithMessage(const char* msg, const char* detail) {
-    if (detail) {
-        fprintf(stderr, "%s: %s\n", msg, detail);
+int main(int argc, char *argv[]) {
+    char *server_name = (argc == 2) ? argv[1] : "localhost";
+    char *server_port = "5066";
+    int sock = SetupTCPClientSocket(server_name, server_port);
+    if (sock < 0) {
+        fprintf(stderr, "Error: Could not establish connection to server\n");
+        exit(1);
     }
-    else {
-        perror(msg);
-    }
-    exit(EXIT_FAILURE);
-}
 
-int main(int argc, char* argv[])
-{
-    struct addrinfo hints, * server_info, * p;
-    int sock, rv;
+	char word[LINESIZE];
     char i_line[LINESIZE], o_line[LINESIZE];
-    char* server_name;
-
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <Server Name>\n", argv[0]);
-        exit(EXIT_FAILURE);
+    int count;
+	
+	count = read(sock, word, LINESIZE);
+    if (count <= 0) {
+        fprintf(stderr, "Error: Failed to receive word from server\n");
+        close(sock);
+        exit(1);
     }
-
-    server_name = argv[1];
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;     // Allow IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM; // TCP socket
-
-    if ((rv = getaddrinfo(server_name, HANGMAN_TCP_PORT, &hints, &server_info)) != 0) {
-        DieWithMessage("getaddrinfo() failed", gai_strerror(rv));
+    word[count - 1] = '\0'; // Ensure null-terminated string
+    printf("Word received from server: %s\n", word);
+	
+	
+    printf("Connected to server %s\n", server_name);
+    while ((count = read(sock, i_line, LINESIZE)) > 0) {
+        write(1, i_line, count);
+        count = read(0, o_line, LINESIZE); // 0 = STDIN
+        write(sock, o_line, count);
     }
-
-
-    for (p = server_info; p != NULL; p = p->ai_next) {
-        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-            continue;
-        }
-
-        if (connect(sock, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sock);
-            continue;
-        }
-
-        break;
-    }
-
-    if (p == NULL) {
-        DieWithMessage("Failed to connect", NULL);
-    }
-
-    freeaddrinfo(server_info);
-
-    printf("Connected to the server.\n");
-
-    while (1) {
-        printf("Enter your guess: ");
-        if (fgets(i_line, LINESIZE, stdin) == NULL) {
-            perror("fgets");
-            break;
-        }
-    
-        i_line[strcspn(i_line, "\n")] = 0;
-
-        if (write(sock, i_line, strlen(i_line)) == -1) {
-            perror("write");
-            break;
-        }
-
-        int bytes_read = read(sock, o_line, LINESIZE - 1);
-        if (bytes_read == -1) {
-            perror("read");
-            break;
-        }
-        else if (bytes_read == 0) {
-            printf("Server disconnected.\n");
-            break;
-        }
-        
-        o_line[bytes_read] = 0;
-        printf("Server response: %s\n", o_line);
-
-    }
-
 
     close(sock);
     return 0;
-
 }
+
